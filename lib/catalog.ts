@@ -71,7 +71,7 @@ export const catalogProducts: CatalogProduct[] = [
   {
     id: "mg-air",
     name: "모스가드 AIR",
-    price: 89000,
+    price: 45000,
     description: "거실까지 넓게 커버하는 강력한 흡입형 포획기",
     stock: 7,
     color: "mint",
@@ -97,7 +97,7 @@ export const catalogProducts: CatalogProduct[] = [
   {
     id: "mg-night",
     name: "모스가드 NIGHT",
-    price: 109000,
+    price: 63000,
     description: "수면을 방해하지 않는 프리미엄 야간 포획기",
     stock: 3,
     color: "lavender",
@@ -123,7 +123,7 @@ export const catalogProducts: CatalogProduct[] = [
   {
     id: "mg-mini",
     name: "모스가드 MINI",
-    price: 35000,
+    price: 58500,
     description: "여행과 캠핑에 가볍게 챙기는 휴대용 포획기",
     stock: 18,
     color: "yellow",

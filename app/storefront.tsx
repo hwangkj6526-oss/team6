@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import DeviceProduct3D, { DeviceMode, modeColors } from "../components/device-product-3d";
 import {
   CatalogProduct,
   Consumable,
@@ -21,57 +22,29 @@ type Order = { id: string; itemName: string; total: number; address: string; del
 const won = (price: number) => new Intl.NumberFormat("ko-KR").format(price) + "원";
 const isProduct = (item: PurchaseItem): item is CatalogProduct => "highlights" in item;
 const deliveryText = (product: CatalogProduct) => `${product.deliveryDays[0]}~${product.deliveryDays[1]}영업일 도착 예상`;
+const modeIntervals: Record<DeviceMode, number> = { 자동: 4, 수동: 7, 강력: 2 };
+const modeDescriptions: Record<DeviceMode, string> = {
+  자동: "주변 환경을 감지해 약 4초마다 포획",
+  수동: "조용한 청색광으로 약 7초마다 포획",
+  강력: "최대 출력으로 약 2초마다 집중 포획"
+};
+const runtimeText = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
 function Stars({ rating }: { rating: number }) {
   return <span className={styles.stars} aria-label={`별점 ${rating}점`}>{"★".repeat(rating)}{"☆".repeat(5 - rating)}</span>;
 }
 
-function ProductModel3D({ product }: { product: CatalogProduct }) {
+function ProductModel3D({ product, active, mode }: { product: CatalogProduct; active: boolean; mode: DeviceMode }) {
   const [rotation, setRotation] = useState(-20);
-  const [dragging, setDragging] = useState(false);
-  const lastX = useRef(0);
-
-  function startDrag(event: PointerEvent<HTMLDivElement>) {
-    setDragging(true);
-    lastX.current = event.clientX;
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function moveDrag(event: PointerEvent<HTMLDivElement>) {
-    if (!dragging) return;
-    const delta = event.clientX - lastX.current;
-    setRotation((value) => value + delta * 0.8);
-    lastX.current = event.clientX;
-  }
+  const modeClass = mode === "자동" ? styles.modeAuto : mode === "수동" ? styles.modeManual : styles.modePower;
 
   return (
     <div className={styles.viewerShell}>
-      <div
-        className={styles.viewerStage}
-        onPointerDown={startDrag}
-        onPointerMove={moveDrag}
-        onPointerUp={() => setDragging(false)}
-        onPointerCancel={() => setDragging(false)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowLeft") setRotation((value) => value - 15);
-          if (event.key === "ArrowRight") setRotation((value) => value + 15);
-        }}
-        role="img"
-        tabIndex={0}
-        aria-label={`${product.name} 3D 모델. 좌우 화살표 또는 드래그로 회전`}
-      >
-        <div className={`${styles.model} ${styles[`model_${product.modelVariant}`]}`} style={{ transform: `rotateX(-9deg) rotateY(${rotation}deg)` }}>
-          <div className={styles.modelTop} />
-          <div className={styles.modelFaces}>
-            {Array.from({ length: 12 }, (_, index) => (
-              <span className={styles.modelFace} key={index} style={{ transform: `rotateY(${index * 30}deg) translateZ(58px)` }}><i /></span>
-            ))}
-          </div>
-          <div className={styles.modelGlow} />
-          <div className={styles.modelBase} />
-          {product.modelVariant === "mini" && <div className={styles.modelLoop} />}
-        </div>
-        <span className={styles.dragHint}>↔ 드래그해서 360° 회전</span>
+      <div className={`${styles.viewerStage} ${modeClass} ${active ? styles.viewerActive : ""}`}>
+        <DeviceProduct3D active={active} className={styles.webglModel} image={product.image} mode={mode} name={product.name} onRotationChange={setRotation} rotation={rotation} variant={product.modelVariant} />
+        <div className={`${styles.mosquitoSwarm} ${active ? styles.swarmActive : ""}`} aria-hidden="true">{Array.from({ length: 6 }, (_, index) => <span key={index}>⌁</span>)}</div>
+        <span className={styles.lightStatus}><i style={{ background: active ? modeColors[mode] : "#aeb4ba" }} />{active ? `${mode} 모드 발광 중` : "발광 대기"}</span>
+        <span className={styles.dragHint}>↔ 제품을 드래그해서 360° 회전</span>
       </div>
       <div className={styles.rotateButtons}>
         <button onClick={() => setRotation((value) => value - 30)} aria-label="제품을 왼쪽으로 회전">↶</button>
@@ -96,8 +69,9 @@ export default function Storefront() {
   const [supportTicket, setSupportTicket] = useState<string | null>(null);
   const [supportError, setSupportError] = useState("");
   const [deviceOn, setDeviceOn] = useState(false);
-  const [mode, setMode] = useState("자동");
-  const [captured, setCaptured] = useState(3);
+  const [mode, setMode] = useState<DeviceMode>("자동");
+  const [captured, setCaptured] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setLoading(false), 600);
@@ -107,6 +81,17 @@ export default function Storefront() {
     }
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!deviceOn) return;
+    let ticks = 0;
+    const timer = window.setInterval(() => {
+      ticks += 1;
+      setElapsedSeconds((seconds) => seconds + 1);
+      if (ticks % modeIntervals[mode] === 0) setCaptured((count) => count + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [deviceOn, mode]);
 
   const products = useMemo(
     () => catalogProducts.filter((product) => product.name.toLowerCase().includes(query.toLowerCase())),
@@ -274,8 +259,21 @@ export default function Storefront() {
 
       {view === "device" && <section className={styles.pageSection}>
         <div className={styles.sectionTitle}><div><p className={styles.eyebrow}>MY DEVICE · INTERACTIVE 3D</p><h1>제품을 돌려보고<br />오늘의 포획을 제어하세요.</h1></div><small>드래그 · 화살표 키 지원</small></div>
-        <div className={styles.productTabs}>{catalogProducts.map((product) => <button className={product.id === selectedProduct.id ? styles.selectedTab : ""} key={product.id} onClick={() => { setSelectedProduct(product); setCaptured(3); }}>{product.name.replace("모스가드 ", "")}</button>)}</div>
-        <div className={styles.deviceGrid}><ProductModel3D product={selectedProduct} /><div className={styles.controlPanel}><div><span>연결된 장치</span><b>{selectedProduct.name}</b><small>Wi-Fi 안정 · 포획 랭킹 #{selectedRank}</small></div><hr /><p>장치 전원</p><button className={`${styles.toggle} ${deviceOn ? styles.toggleOn : ""}`} onClick={() => setDeviceOn(!deviceOn)} aria-label="장치 전원 전환"><span /></button><b>{deviceOn ? "유인 · 포획 중" : "전원이 꺼져 있습니다"}</b><hr /><p>작동 모드</p><div className={styles.modeButtons}>{["자동", "수면", "강력"].map((item) => <button className={mode === item ? styles.modeSelected : ""} key={item} onClick={() => setMode(item)}>{item}</button>)}</div><div className={styles.capture}><span>오늘 포획</span><b>{captured} <small>마리</small></b><button onClick={() => deviceOn && setCaptured((value) => value + 1)} disabled={!deviceOn}>시뮬레이션 +1</button></div></div></div>
+        <div className={styles.productTabs}>{catalogProducts.map((product) => <button className={product.id === selectedProduct.id ? styles.selectedTab : ""} key={product.id} onClick={() => { setSelectedProduct(product); setCaptured(0); setElapsedSeconds(0); setDeviceOn(false); }}>{product.name.replace("모스가드 ", "")}</button>)}</div>
+        <div className={styles.deviceGrid}>
+          <ProductModel3D product={selectedProduct} active={deviceOn} mode={mode} />
+          <div className={styles.controlPanel}>
+            <div><span>연결된 장치</span><b>{selectedProduct.name}</b><small>Wi-Fi 안정 · 포획 랭킹 #{selectedRank}</small></div>
+            <div className={styles.liveStats}><span><small>작동 시간</small><b>{runtimeText(elapsedSeconds)}</b></span><span><small>실시간 제거</small><b>{captured}마리</b></span></div>
+            <hr />
+            <p>장치 전원</p><button className={`${styles.toggle} ${deviceOn ? styles.toggleOn : ""}`} onClick={() => setDeviceOn(!deviceOn)} aria-label="장치 전원 전환"><span /></button><b className={styles.powerState}>{deviceOn ? `${mode} 모드로 유인 · 포획 중` : "전원이 꺼져 있습니다"}</b>
+            <hr />
+            <p>작동 모드와 발광</p>
+            <div className={styles.modeButtons}>{(["자동", "수동", "강력"] as DeviceMode[]).map((item) => <button className={mode === item ? styles.modeSelected : ""} key={item} onClick={() => setMode(item)} style={mode === item ? { borderColor: modeColors[item], color: modeColors[item], background: `${modeColors[item]}14` } : undefined}><i style={{ background: modeColors[item] }} />{item}</button>)}</div>
+            <p className={styles.modeDescription}>{modeDescriptions[mode]}</p>
+            <div className={styles.capture} aria-live="polite"><span>시간이 지나며 포획된 모기</span><b>{captured} <small>마리 제거</small></b><div className={styles.capturePulse}>{deviceOn ? "모기가 발광부로 유인되어 자동 포획되고 있습니다." : "전원을 켜면 포획 시뮬레이션이 시작됩니다."}</div><button onClick={() => deviceOn && setCaptured((value) => value + 1)} disabled={!deviceOn}>{mode === "수동" ? "수동 포획 +1" : "포획 테스트 +1"}</button></div>
+          </div>
+        </div>
       </section>}
 
       {view === "checkout" && <section className={styles.checkout}>
